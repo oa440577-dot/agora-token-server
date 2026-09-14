@@ -10,11 +10,6 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-module.exports.config = {
-  api: {
-    bodyParser: false,
-  },
-};
 
 function buffer(req) {
   return new Promise((resolve, reject) => {
@@ -74,4 +69,10 @@ module.exports = async (req, res) => {
   }
 
   res.status(200).json({ received: true });
+};
+
+module.exports.config = {
+  api: {
+    bodyParser: false,
+  },
 };
