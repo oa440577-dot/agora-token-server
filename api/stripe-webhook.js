@@ -46,12 +46,13 @@ module.exports = async (req, res) => {
 
     if (uid && amountUsd) {
       const userRef = db.collection("users").doc(uid);
+      const walletRef = db.collection("wallets").doc(uid);
 
       await db.runTransaction(async (t) => {
-        const doc = await t.get(userRef);
+        const doc = await t.get(walletRef);
         const currentBalance = doc.exists ? (doc.data().coinBalance || 0) : 0;
         t.set(
-          userRef,
+          walletRef,
           { coinBalance: currentBalance + amountUsd },
           { merge: true }
         );
