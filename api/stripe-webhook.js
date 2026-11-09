@@ -1,15 +1,13 @@
 const Stripe = require("stripe");
-const admin = require("firebase-admin");
+const { initializeApp, getApps, cert } = require("firebase-admin/app");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
-if (!admin.apps.length) {
+if (!getApps().length) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  initializeApp({ credential: cert(serviceAccount) });
 }
 
-const db = admin.firestore();
-
+const db = getFirestore();
 
 function buffer(req) {
   return new Promise((resolve, reject) => {
@@ -63,7 +61,7 @@ module.exports = async (req, res) => {
         type: "purchase",
         amount: amountUsd,
         stripeSessionId: session.id,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
     }
   }
