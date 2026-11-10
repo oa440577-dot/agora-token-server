@@ -8,13 +8,7 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
-
-const GIFTS = {
-  rose: { name: "Rose", emoji: "🌹", price: 1 },
-  heart: { name: "Heart", emoji: "💖", price: 5 },
-  diamond: { name: "Diamond", emoji: "💎", price: 50 },
-  lion: { name: "Lion", emoji: "🦁", price: 500 },
-};
+const MAX_GIFT = 10000;
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -30,9 +24,12 @@ module.exports = async (req, res) => {
     const decoded = await getAuth().verifyIdToken(token);
     const senderId = decoded.uid;
 
-    const { chatId, giftId } = req.body || {};
-    const gift = GIFTS[giftId];
-    if (!chatId || !gift) return res.status(400).json({ error: "Bad request" });
+    const { chatId } = req.body || {};
+    const amount = Number(req.body && req.body.amount);
+    if (!chatId) return res.status(400).json({ error: "Bad request" });
+    if (!Number.isInteger(amount) || amount < 1 || amount > MAX_GIFT) {
+      return res.status(400).json({ error: "Enter a whole number from 1 to " + MAX_GIFT });
+    }
 
     const chatRef = db.collection("chats").doc(chatId);
     const senderRef = db.collection("wallets").doc(senderId);
@@ -50,33 +47,34 @@ module.exports = async (req, res) => {
       const r = await t.get(receiverRef);
       const bal = s.exists ? s.data().coinBalance || 0 : 0;
       const rbal = r.exists ? r.data().coinBalance || 0 : 0;
-      if (bal < gift.price) throw new Error("NOT_ENOUGH_COINS");
+      if (bal < amount) throw new Error("NOT_ENOUGH_COINS");
 
-      t.set(senderRef, { coinBalance: bal - gift.price }, { merge: true });
-      t.set(receiverRef, { coinBalance: rbal + gift.price }, { merge: true });
+      t.set(senderRef, { coinBalance: bal - amount }, { merge: true });
+      t.set(receiverRef, { coinBalance: rbal + amount }, { merge: true });
 
+      const label = "🎁 " + amount + " coins";
       t.set(chatRef.collection("messages").doc(), {
         type: "gift",
-        giftId,
-        giftName: gift.name,
-        emoji: gift.emoji,
-        amount: gift.price,
-        text: gift.emoji + " " + gift.name,
+        amount,
+        text: label,
         senderId,
         createdAt: FieldValue.serverTimestamp(),
       });
+      t.set(
+        chatRef,
+        { lastMessage: label, lastMessageAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
 
       t.set(db.collection("users").doc(senderId).collection("transactions").doc(), {
         type: "gift_sent",
-        amount: gift.price,
-        giftId,
+        amount,
         toUid: receiverId,
         createdAt: FieldValue.serverTimestamp(),
       });
       t.set(db.collection("users").doc(receiverId).collection("transactions").doc(), {
         type: "gift_received",
-        amount: gift.price,
-        giftId,
+        amount,
         fromUid: senderId,
         createdAt: FieldValue.serverTimestamp(),
       });
