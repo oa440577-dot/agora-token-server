@@ -8,7 +8,7 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
-const MAX_GIFT = 10000;
+const MAX_GIFT = 100;
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -27,8 +27,8 @@ module.exports = async (req, res) => {
     const { chatId } = req.body || {};
     const amount = Number(req.body && req.body.amount);
     if (!chatId) return res.status(400).json({ error: "Bad request" });
-    if (!Number.isInteger(amount) || amount < 1 || amount > MAX_GIFT) {
-      return res.status(400).json({ error: "Enter a whole number from 1 to " + MAX_GIFT });
+    if (Math.round(amount * 100) / 100 !== amount || amount < 0.01 || amount > MAX_GIFT) {
+      return res.status(400).json({ error: "Enter an amount from 0.01 to " + MAX_GIFT });
     }
 
     const chatRef = db.collection("chats").doc(chatId);
@@ -49,10 +49,10 @@ module.exports = async (req, res) => {
       const rbal = r.exists ? r.data().coinBalance || 0 : 0;
       if (bal < amount) throw new Error("NOT_ENOUGH_COINS");
 
-      t.set(senderRef, { coinBalance: bal - amount }, { merge: true });
-      t.set(receiverRef, { coinBalance: rbal + amount }, { merge: true });
+      t.set(senderRef, { coinBalance: Math.round((bal - amount) * 100) / 100 }, { merge: true });
+      t.set(receiverRef, { coinBalance: Math.round((rbal + amount) * 100) / 100 }, { merge: true });
 
-      const label = "🎁 " + amount + " coins";
+      const label = "Sent " + amount + " coins";
       t.set(chatRef.collection("messages").doc(), {
         type: "gift",
         amount,

@@ -8,6 +8,7 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
+const COIN_USD = 100;
 
 function buffer(req) {
   return new Promise((resolve, reject) => {
@@ -43,6 +44,7 @@ module.exports = async (req, res) => {
     const session = event.data.object;
     const uid = session.metadata.uid;
     const amountUsd = Number(session.metadata.amountUsd);
+    const coins = Math.round((amountUsd / COIN_USD) * 100) / 100;
 
     if (uid && amountUsd) {
       const userRef = db.collection("users").doc(uid);
@@ -53,14 +55,15 @@ module.exports = async (req, res) => {
         const currentBalance = doc.exists ? (doc.data().coinBalance || 0) : 0;
         t.set(
           walletRef,
-          { coinBalance: currentBalance + amountUsd },
+          { coinBalance: Math.round((currentBalance + coins) * 100) / 100 },
           { merge: true }
         );
       });
 
       await userRef.collection("transactions").add({
         type: "purchase",
-        amount: amountUsd,
+        amount: coins,
+        amountUsd,
         stripeSessionId: session.id,
         createdAt: FieldValue.serverTimestamp(),
       });
