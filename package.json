@@ -14,5 +14,8 @@
     "agora-token": "^2.0.6",
     "firebase-admin": "^14.4.0",
     "stripe": "^22.6.2"
+  },
+  "overrides": {
+    "jwks-rsa": "3.1.0"
   }
 }
