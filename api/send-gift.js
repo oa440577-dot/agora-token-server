@@ -1,6 +1,7 @@
 const { initializeApp, getApps, cert } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
+const { checkPin } = require("./_pin");
 
 if (!getApps().length) {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -29,6 +30,15 @@ module.exports = async (req, res) => {
     if (!chatId) return res.status(400).json({ error: "Bad request" });
     if (Math.round(amount * 100) / 100 !== amount || amount < 0.01 || amount > MAX_GIFT) {
       return res.status(400).json({ error: "Enter an amount from 0.01 to " + MAX_GIFT });
+    }
+
+    const pinResult = await checkPin(db, senderId, String((req.body && req.body.pin) || ""));
+    if (!pinResult.ok) {
+      const msg =
+        pinResult.code === "NO_PIN" ? "Set your 5-digit PIN in Wallet first"
+        : pinResult.code === "LOCKED" ? "Too many tries. Try again in 30 minutes."
+        : "Wrong PIN. " + pinResult.left + " tries left";
+      return res.status(400).json({ error: msg });
     }
 
     const chatRef = db.collection("chats").doc(chatId);
