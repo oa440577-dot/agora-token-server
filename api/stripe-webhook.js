@@ -8,7 +8,7 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
-const COIN_USD = 100;
+const COIN_USD = 1;
 
 function buffer(req) {
   return new Promise((resolve, reject) => {

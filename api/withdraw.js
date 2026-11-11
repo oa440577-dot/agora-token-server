@@ -10,7 +10,7 @@ if (!getApps().length) {
 }
 const db = getFirestore();
 
-const COIN_USD = 100;
+const COIN_USD = 1;
 const CREATOR_SHARE = 0.8;
 const MIN_COINS = 0.1;
 const MAX_COINS = 100;
