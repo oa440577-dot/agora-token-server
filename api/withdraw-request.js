@@ -20,7 +20,7 @@ const COUNTRIES = (
   "MT MD MC MK NO PL PT RO SM RS SK SI ES SE CH TR GB US CA MX BS CR DO " +
   "SV GT JM PA LC TT AG EC GY PE DZ BJ BW CI EG ET GM KE MG MU MA MZ NA " +
   "RW SN ZA TZ TN BH IL JO KW OM QA AE AU NZ BT BN HK IN ID JP MY MN PK " +
-  "PH SG LK TW TH UZ VN"
+  "PH SG LK TW TH UZ VN NG"
 ).split(" ");
 
 module.exports = async (req, res) => {
