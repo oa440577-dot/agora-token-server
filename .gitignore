@@ -2,3 +2,7 @@ firebase-key.json
 firebase-key.json
 .vercel
 .env*
+node_modules
+.env
+.env.*
+.vercel
