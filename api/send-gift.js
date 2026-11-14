@@ -9,7 +9,7 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
-const MAX_GIFT = 100;
+const MAX_GIFT = 500;
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
