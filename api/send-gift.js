@@ -72,7 +72,7 @@ module.exports = async (req, res) => {
       });
       t.set(
         chatRef,
-        { lastMessage: label, lastMessageAt: FieldValue.serverTimestamp() },
+        { lastMessage: label, lastMessageAt: FieldValue.serverTimestamp(), lastSenderId: senderId, unread: { [receiverId]: FieldValue.increment(1) } },
         { merge: true }
       );
 
