@@ -1,0 +1,85 @@
+const { initializeApp, getApps, cert } = require("firebase-admin/app");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
+
+if (!getApps().length) {
+  initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+}
+const db = getFirestore();
+
+module.exports = async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  try {
+    const token = (req.headers.authorization || "").replace(/^Bearer /, "");
+    if (!token) return res.status(401).json({ error: "Sign in first" });
+
+    const decoded = await getAuth().verifyIdToken(token);
+    const uid = decoded.uid;
+
+    if (uid === process.env.STRESS_FOUNDER_UID) {
+      return res.status(400).json({ error: "Founder verification is free" });
+    }
+
+    if (!process.env.FLW_SECRET_KEY || !process.env.FLW_VERIFICATION_PLAN_ID) {
+      return res.status(503).json({ error: "Payment service is not configured yet" });
+    }
+
+    const user = await getAuth().getUser(uid);
+    if (!user.email) return res.status(400).json({ error: "Add an email to your account first" });
+
+    const txRef = "stress_verified_" + uid + "_" + Date.now();
+    const pending = db.collection("verificationPayments").doc(txRef);
+
+    await pending.set({
+      uid,
+      email: user.email.toLowerCase(),
+      amount: 5000,
+      currency: "NGN",
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp()
+    });
+
+    await db.collection("verificationCustomers").doc(uid).set({
+      email: user.email.toLowerCase(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    const response = await fetch("https://api.flutterwave.com/v3/payments", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + process.env.FLW_SECRET_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tx_ref: txRef,
+        amount: 5000,
+        currency: "NGN",
+        payment_plan: Number(process.env.FLW_VERIFICATION_PLAN_ID),
+        redirect_url: "https://stress-ochre.vercel.app/",
+        customer: { email: user.email, name: user.displayName || "STRESS User" },
+        meta: { uid, purpose: "STRESS_VERIFIED" },
+        customizations: {
+          title: "STRESS Verified",
+          description: "Monthly verified badge subscription"
+        }
+      })
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.data?.link) {
+      await pending.update({ status: "checkout_failed" });
+      console.error("Flutterwave checkout error:", result);
+      return res.status(502).json({ error: "Could not start payment" });
+    }
+
+    return res.status(200).json({ ok: true, link: result.data.link });
+  } catch (err) {
+    console.error("verification checkout:", err.message);
+    return res.status(500).json({ error: "Could not start verification" });
+  }
+};
