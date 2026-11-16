@@ -3,37 +3,59 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 
 if (!getApps().length) {
-  initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  initializeApp({ credential: cert(serviceAccount) });
 }
+
 const db = getFirestore();
-const NGN_PER_USD = 1600;
-const CUR = { NG: "NGN", GH: "GHS", KE: "KES", ZA: "ZAR", UG: "UGX", TZ: "TZS", RW: "RWF", GB: "GBP" };
-const EURO = new Set(["AT", "BE", "CY", "EE", "FI", "FR", "DE", "GR", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PT", "SK", "SI", "ES", "HR"]);
-let cache = { at: 0, rates: null };
+const PACKS = [10, 50, 100, 500];
+const NGN_RATE = 1600;
+const RETURN_URL = "https://stress-ochre.vercel.app/wallet?success=true";
 
-async function rates() {
-  if (cache.rates && Date.now() - cache.at < 6 * 3600 * 1000) return cache.rates;
-  const r = await fetch("https://open.er-api.com/v6/latest/USD");
-  const d = await r.json();
-  if (!r.ok || d.result !== "success" || !d.rates) throw new Error("no rates");
-  cache = { at: Date.now(), rates: d.rates };
-  return d.rates;
+const CURRENCY_BY_COUNTRY = {
+  ng: "NGN", nigeria: "NGN",
+  gh: "GHS", ghana: "GHS",
+  ke: "KES", kenya: "KES",
+  za: "ZAR", "south africa": "ZAR",
+  ug: "UGX", uganda: "UGX",
+  tz: "TZS", tanzania: "TZS",
+  rw: "RWF", rwanda: "RWF",
+  gb: "GBP", uk: "GBP", "united kingdom": "GBP",
+};
+const ZERO_DECIMAL = ["UGX", "RWF", "XOF", "XAF"];
+
+async function getRate(cur) {
+  try {
+    const r = await fetch("https://open.er-api.com/v6/latest/USD", {
+      signal: AbortSignal.timeout(4000),
+    });
+    const j = await r.json();
+    const rate = j && j.rates ? Number(j.rates[cur]) : 0;
+    return rate > 0 ? rate : null;
+  } catch (e) {
+    return null;
+  }
 }
 
-async function priceFor(country, coins) {
-  const cc = String(country || "").toUpperCase();
-  const cur = CUR[cc] || (EURO.has(cc) ? "EUR" : "USD");
-  if (cur === "NGN") return { currency: "NGN", amount: coins * NGN_PER_USD };
+async function pickCharge(country, coins) {
+  const key = String(country || "").trim().toLowerCase();
+  const cur = CURRENCY_BY_COUNTRY[key] || "USD";
+  if (cur === "NGN") return { currency: "NGN", amount: coins * NGN_RATE };
   if (cur === "USD") return { currency: "USD", amount: coins };
-  try {
-    const rt = (await rates())[cur];
-    if (!(rt > 0)) throw new Error("no rate");
-    const raw = coins * rt;
-    const amount = cur === "EUR" || cur === "GBP" ? Math.ceil(raw * 100) / 100 : Math.ceil(raw);
-    return { currency: cur, amount };
-  } catch (e) {
-    return { currency: "USD", amount: coins };
-  }
+  const rate = await getRate(cur);
+  if (!rate) return { currency: "USD", amount: coins };
+  const raw = coins * rate;
+  const amount = ZERO_DECIMAL.includes(cur) ? Math.ceil(raw) : Math.ceil(raw * 100) / 100;
+  return { currency: cur, amount };
+}
+
+async function createLink(secret, body) {
+  const r = await fetch("https://api.flutterwave.com/v3/payments", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + secret, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return r.json().catch(() => ({}));
 }
 
 module.exports = async (req, res) => {
@@ -42,39 +64,57 @@ module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
+
   try {
-    const body = req.body || {};
-    const coins = Number(body.amountUsd);
-    const uid = String(body.uid || "");
-    if (!uid || !(coins >= 1 && coins <= 5000) || Math.round(coins) !== coins) {
-      return res.status(400).json({ error: "Choose an amount from 1 to 5000." });
-    }
-    const user = await getAuth().getUser(uid);
-    if (!user.email) return res.status(400).json({ error: "Your account has no email." });
-    const prof = await db.collection("users").doc(uid).get();
-    const country = (prof.exists && prof.data().country) || String(body.guess || "");
-    const { currency, amount } = await priceFor(country, coins);
-    const txRef = "stress_" + uid.slice(0, 8) + "_" + Date.now();
-    await db.collection("flwRefs").doc(txRef).set({ uid, coins, currency, amount, status: "pending", createdAt: FieldValue.serverTimestamp() });
-    const r = await fetch("https://api.flutterwave.com/v3/payments", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tx_ref: txRef,
-        amount,
-        currency,
-        redirect_url: "https://stress-ochre.vercel.app/",
-        customer: { email: user.email, name: user.displayName || "STRESS user" },
-        customizations: { title: "STRESS coins", description: coins + " coins" },
-      }),
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (!token) return res.status(401).json({ error: "Not signed in" });
+    const decoded = await getAuth().verifyIdToken(token);
+    const uid = decoded.uid;
+
+    const coins = Number(req.body && req.body.coins);
+    if (!PACKS.includes(coins)) return res.status(400).json({ error: "Invalid coin pack" });
+
+    const userDoc = await db.collection("users").doc(uid).get();
+    const profile = userDoc.exists ? userDoc.data() : {};
+    const country = profile.country || (req.body && req.body.country) || "";
+
+    let charge = await pickCharge(country, coins);
+    const ref = "stress_" + uid.slice(0, 8) + "_" + Date.now();
+    const secret = process.env.FLW_SECRET_KEY;
+
+    const build = (c) => ({
+      tx_ref: ref,
+      amount: c.amount,
+      currency: c.currency,
+      redirect_url: RETURN_URL,
+      customer: { email: decoded.email || "", name: profile.name || "STRESS user" },
+      customizations: { title: "STRESS", description: coins + " coins" },
+      meta: { uid: uid, coins: coins },
     });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok || d.status !== "success" || !d.data || !d.data.link) {
-      return res.status(502).json({ error: d.message || "Could not start the payment." });
+
+    let out = await createLink(secret, build(charge));
+    if ((!out || out.status !== "success") && charge.currency !== "USD") {
+      charge = { currency: "USD", amount: coins };
+      out = await createLink(secret, build(charge));
     }
-    return res.status(200).json({ url: d.data.link, reference: txRef, currency, amount });
+    if (!out || out.status !== "success" || !out.data || !out.data.link) {
+      console.error("Flutterwave init failed:", JSON.stringify(out));
+      return res.status(502).json({ error: "Could not start payment" });
+    }
+
+    await db.collection("flwRefs").doc(ref).set({
+      uid: uid,
+      coins: coins,
+      currency: charge.currency,
+      amount: charge.amount,
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    return res.status(200).json({ url: out.data.link, currency: charge.currency, amount: charge.amount });
   } catch (err) {
-    console.error("flw-init failed:", err.message);
-    return res.status(500).json({ error: "Could not start the payment." });
+    console.error(err);
+    return res.status(500).json({ error: "Failed to start payment" });
   }
 };
