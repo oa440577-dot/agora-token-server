@@ -1,86 +1,29 @@
+const crypto = require("crypto");
 const { initializeApp, getApps, cert } = require("firebase-admin/app");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore } = require("firebase-admin/firestore");
+const { creditPayment } = require("./_flw");
 
 if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  initializeApp({ credential: cert(serviceAccount) });
+  initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 }
-
 const db = getFirestore();
-
-async function verifyWithFlutterwave(id) {
-  const r = await fetch("https://api.flutterwave.com/v3/transactions/" + id + "/verify", {
-    headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY },
-  });
-  return r.json().catch(() => ({}));
-}
-
-async function dbg(o) {
-  try { await db.collection("flwLogs").add({ ...o, at: Date.now() }); } catch (e) {}
-}
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
-
-  const hash = req.headers["verif-hash"];
-  if (!(process.env.FLW_WEBHOOK_SECRET_HASH || process.env.FLW_SECRET_HASH) || hash !== (process.env.FLW_WEBHOOK_SECRET_HASH || process.env.FLW_SECRET_HASH)) {
-    return res.status(401).send("Invalid signature");
-  }
-
   try {
+    const got = Buffer.from(String(req.headers["verif-hash"] || ""));
+    const want = Buffer.from(String(process.env.FLW_SECRET_HASH || ""));
+    if (!want.length || got.length !== want.length || !crypto.timingSafeEqual(got, want)) {
+      console.error("flw-webhook: hash mismatch or FLW_SECRET_HASH missing");
+      return res.status(401).send("Bad hash");
+    }
     const event = req.body || {};
-    await dbg({ step: "received", event: String(event.event), tx_ref: String((event.data || {}).tx_ref || "") });
-    const data = event.data || {};
-    if (event.event !== "charge.completed" || data.status !== "successful" || !data.id || !data.tx_ref) {
-      { await dbg({ step: "ignored event", event: String(event.event), status: String(data.status), tx_ref: String(data.tx_ref || "") }); return res.status(200).json({ ignored: true }); }
-    }
-
-    const refDoc = db.collection("flwRefs").doc(String(data.tx_ref));
-    const snap = await refDoc.get();
-    if (!snap.exists) { await dbg({ step: "unknown ref", tx_ref: String(data.tx_ref) }); return res.status(200).json({ ignored: "unknown ref" }); }
-    const saved = snap.data();
-    if (saved.status === "paid") return res.status(200).json({ already: true });
-
-    const check = await verifyWithFlutterwave(data.id);
-    const v = check && check.data ? check.data : {};
-    const ok =
-      check.status === "success" &&
-      v.status === "successful" &&
-      v.tx_ref === data.tx_ref &&
-      v.currency === saved.currency &&
-      Number(v.amount) >= Number(saved.amount);
-    if (!ok) {
-      console.error("Flutterwave verify mismatch:", JSON.stringify({ saved, v }));
-      await dbg({ step: "verify failed", tx_ref: String(data.tx_ref), savedAmount: String(saved.amount), savedCurrency: String(saved.currency), flwAmount: String(v.amount), flwCurrency: String(v.currency), flwStatus: String(v.status), checkStatus: String(check.status) });
-      return res.status(200).json({ ignored: "verify failed" });
-    }
-
-    const coins = Number(saved.coins);
-    const walletRef = db.collection("wallets").doc(saved.uid);
-    const txRef = db.collection("users").doc(saved.uid).collection("transactions").doc(String(data.tx_ref));
-
-    await db.runTransaction(async (t) => {
-      const fresh = await t.get(refDoc);
-      if (fresh.data().status === "paid") return;
-      const w = await t.get(walletRef);
-      const bal = w.exists ? w.data().coinBalance || 0 : 0;
-      t.set(walletRef, { coinBalance: Math.round((bal + coins) * 100) / 100 }, { merge: true });
-      t.set(txRef, {
-        type: "purchase",
-        amount: coins,
-        amountUsd: coins,
-        provider: "flutterwave",
-        flwRef: String(data.tx_ref),
-        paidCurrency: saved.currency,
-        paidAmount: Number(v.amount),
-        createdAt: FieldValue.serverTimestamp(),
-      });
-      t.update(refDoc, { status: "paid", paidAt: FieldValue.serverTimestamp(), flwId: String(data.id) });
-    });
-
-    return res.status(200).json({ credited: true });
+    const d = event.data || {};
+    if (event.event !== "charge.completed" || !d.id || !d.tx_ref) return res.status(200).send("ignored");
+    const out = await creditPayment(db, d.tx_ref, d.id);
+    return res.status(200).send(out.ok ? "ok" : out.reason);
   } catch (err) {
-    console.error(err);
-    return res.status(500).send("Error");
+    console.error("flw-webhook failed:", err.message);
+    return res.status(500).send("error");
   }
 };
