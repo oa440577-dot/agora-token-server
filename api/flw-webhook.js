@@ -19,7 +19,7 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
   const hash = req.headers["verif-hash"];
-  if (!process.env.FLW_SECRET_HASH || hash !== process.env.FLW_SECRET_HASH) {
+  if (!(process.env.FLW_WEBHOOK_SECRET_HASH || process.env.FLW_SECRET_HASH) || hash !== (process.env.FLW_WEBHOOK_SECRET_HASH || process.env.FLW_SECRET_HASH)) {
     return res.status(401).send("Invalid signature");
   }
 
