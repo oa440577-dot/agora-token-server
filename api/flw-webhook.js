@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
     });
     const v = await vr.json().catch(() => ({}));
     const t = v && v.data;
-    if (!vr.ok || !t || t.status !== "successful" || t.tx_ref !== d.tx_ref || t.currency !== "NGN" || Number(t.amount) < rec.amountNgn) {
+    if (!vr.ok || !t || t.status !== "successful" || t.tx_ref !== d.tx_ref || t.currency !== (rec.currency || "NGN") || Number(t.amount) < Number(rec.amount != null ? rec.amount : rec.amountNgn)) {
       return res.status(200).send("not valid");
     }
 
@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
       const bal = w.exists ? Number(w.data().coinBalance) || 0 : 0;
       tx.set(walletRef, { coinBalance: Math.round((bal + rec.coins) * 100) / 100 }, { merge: true });
       tx.update(refDoc, { status: "done", flwId: String(d.id), paidAt: FieldValue.serverTimestamp() });
-      tx.set(txRef, { type: "purchase", amount: rec.coins, amountUsd: rec.coins, amountNgn: rec.amountNgn, provider: "flutterwave", reference: String(d.tx_ref), createdAt: FieldValue.serverTimestamp() });
+      tx.set(txRef, { type: "purchase", amount: rec.coins, amountUsd: rec.coins, ...(rec.currency && rec.currency !== "NGN" ? { currency: rec.currency, amountPaid: Number(rec.amount) } : { amountNgn: Number(rec.amount != null ? rec.amount : rec.amountNgn) }), provider: "flutterwave", reference: String(d.tx_ref), createdAt: FieldValue.serverTimestamp() });
     });
     return res.status(200).send("ok");
   } catch (err) {
