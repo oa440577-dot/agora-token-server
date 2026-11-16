@@ -30,8 +30,11 @@ module.exports = async (req, res) => {
     const verified = await verifyResponse.json();
     const tx = verified.data;
 
+    const validNGN = tx && tx.currency === "NGN" && Number(tx.amount) >= 5000;
+    const validUSD = tx && tx.currency === "USD" && Number(tx.amount) >= 5;
+
     if (!verifyResponse.ok || !tx || tx.status !== "successful" ||
-        tx.currency !== "NGN" || Number(tx.amount) < 5000) {
+        (!validNGN && !validUSD)) {
       return res.status(200).json({ received: true, verified: false });
     }
 

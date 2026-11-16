@@ -15,6 +15,10 @@ async function verifyWithFlutterwave(id) {
   return r.json().catch(() => ({}));
 }
 
+async function dbg(o) {
+  try { await db.collection("flwLogs").add({ ...o, at: Date.now() }); } catch (e) {}
+}
+
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
@@ -25,14 +29,15 @@ module.exports = async (req, res) => {
 
   try {
     const event = req.body || {};
+    await dbg({ step: "received", event: String(event.event), tx_ref: String((event.data || {}).tx_ref || "") });
     const data = event.data || {};
     if (event.event !== "charge.completed" || data.status !== "successful" || !data.id || !data.tx_ref) {
-      return res.status(200).json({ ignored: true });
+      { await dbg({ step: "ignored event", event: String(event.event), status: String(data.status), tx_ref: String(data.tx_ref || "") }); return res.status(200).json({ ignored: true }); }
     }
 
     const refDoc = db.collection("flwRefs").doc(String(data.tx_ref));
     const snap = await refDoc.get();
-    if (!snap.exists) return res.status(200).json({ ignored: "unknown ref" });
+    if (!snap.exists) { await dbg({ step: "unknown ref", tx_ref: String(data.tx_ref) }); return res.status(200).json({ ignored: "unknown ref" }); }
     const saved = snap.data();
     if (saved.status === "paid") return res.status(200).json({ already: true });
 
@@ -46,6 +51,7 @@ module.exports = async (req, res) => {
       Number(v.amount) >= Number(saved.amount);
     if (!ok) {
       console.error("Flutterwave verify mismatch:", JSON.stringify({ saved, v }));
+      await dbg({ step: "verify failed", tx_ref: String(data.tx_ref), savedAmount: String(saved.amount), savedCurrency: String(saved.currency), flwAmount: String(v.amount), flwCurrency: String(v.currency), flwStatus: String(v.status), checkStatus: String(check.status) });
       return res.status(200).json({ ignored: "verify failed" });
     }
 

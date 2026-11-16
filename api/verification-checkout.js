@@ -25,12 +25,23 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: "Founder verification is free" });
     }
 
-    if (!process.env.FLW_SECRET_KEY || !process.env.FLW_VERIFICATION_PLAN_ID) {
+    if (!process.env.FLW_SECRET_KEY) {
       return res.status(503).json({ error: "Payment service is not configured yet" });
     }
 
     const user = await getAuth().getUser(uid);
     if (!user.email) return res.status(400).json({ error: "Add an email to your account first" });
+    const country = String(req.headers["x-vercel-ip-country"] || "").toUpperCase();
+    const isNigeria = country === "NG";
+    const currency = isNigeria ? "NGN" : "USD";
+    const amount = isNigeria ? 5000 : 5;
+    const planId = isNigeria
+      ? process.env.FLW_VERIFICATION_NGN_PLAN_ID
+      : process.env.FLW_VERIFICATION_PLAN_ID;
+
+    if (!planId || !Number.isFinite(Number(planId))) {
+      return res.status(503).json({ error: "Subscription plan is not configured" });
+    }
 
     const txRef = "stress_verified_" + uid + "_" + Date.now();
     const pending = db.collection("verificationPayments").doc(txRef);
@@ -38,8 +49,8 @@ module.exports = async (req, res) => {
     await pending.set({
       uid,
       email: user.email.toLowerCase(),
-      amount: 5000,
-      currency: "NGN",
+      amount,
+      currency,
       status: "pending",
       createdAt: FieldValue.serverTimestamp()
     });
@@ -57,9 +68,9 @@ module.exports = async (req, res) => {
       },
       body: JSON.stringify({
         tx_ref: txRef,
-        amount: 5000,
-        currency: "NGN",
-        payment_plan: Number(process.env.FLW_VERIFICATION_PLAN_ID),
+        amount,
+        currency,
+        payment_plan: Number(planId),
         redirect_url: "https://stress-ochre.vercel.app/",
         customer: { email: user.email, name: user.displayName || "STRESS User" },
         meta: { uid, purpose: "STRESS_VERIFIED" },
