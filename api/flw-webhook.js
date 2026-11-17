@@ -8,7 +8,10 @@ if (!getApps().length) {
 }
 const db = getFirestore();
 
+const handleVerify = require("./_flwverify");
+
 module.exports = async (req, res) => {
+  if (req.query && req.query.mode === "verify") return handleVerify(req, res);
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
   try {
     const got = Buffer.from(String(req.headers["verif-hash"] || ""));
