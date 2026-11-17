@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
   try {
     const got = Buffer.from(String(req.headers["verif-hash"] || ""));
-    const want = Buffer.from(String(process.env.FLW_SECRET_HASH || ""));
+    const want = Buffer.from(String(process.env.FLW_WEBHOOK_SECRET_HASH || process.env.FLW_SECRET_HASH || ""));
     if (!want.length || got.length !== want.length || !crypto.timingSafeEqual(got, want)) {
       console.error("flw-webhook: hash mismatch or FLW_SECRET_HASH missing");
       return res.status(401).send("Bad hash");
