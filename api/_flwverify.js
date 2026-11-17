@@ -56,6 +56,6 @@ module.exports = async function handleVerify(req, res) {
     return res.status(200).json({ status: "paid", coins: coins });
   } catch (e) {
     console.error("flw verify:", e.message);
-    return res.status(500).json({ error: "Could not confirm the payment." });
+    return res.status(500).json({ error: "Confirm failed: " + String(e.message).slice(0, 140) });
   }
 };
