@@ -35,6 +35,23 @@ module.exports = async (req, res) => {
     if (!token) return res.status(401).json({ error: "Not signed in" });
     const uid = (await getAuth().verifyIdToken(token)).uid;
     const b = req.body || {};
+    const act = String(b.action || "");
+    const flwAuth = { Authorization: "Bearer " + process.env.FLW_SECRET_KEY, "Content-Type": "application/json" };
+    if (act === "banks") {
+      const r = await fetch("https://api.flutterwave.com/v3/banks/NG", { headers: flwAuth });
+      const d = await r.json().catch(() => ({}));
+      const banks = r.ok && Array.isArray(d.data) ? d.data.map((x) => ({ code: String(x.code), name: String(x.name) })).sort((m, n) => m.name.localeCompare(n.name)) : [];
+      return res.status(200).json({ banks });
+    }
+    if (act === "resolve") {
+      const acct = String(b.accountNumber || "").replace(/\D/g, "");
+      const code = String(b.bankCode || "");
+      if (acct.length !== 10 || !code) return res.status(400).json({ error: "Enter a 10-digit account number." });
+      const r = await fetch("https://api.flutterwave.com/v3/accounts/resolve", { method: "POST", headers: flwAuth, body: JSON.stringify({ account_number: acct, account_bank: code }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.status !== "success" || !d.data) return res.status(404).json({ error: "We could not verify that account." });
+      return res.status(200).json({ accountName: d.data.account_name });
+    }
     const coins = Number(b.coins);
     if (round2(coins) !== coins || coins < MIN_COINS || coins > MAX_COINS) {
       return res.status(400).json({ error: "Enter " + MIN_COINS + " to " + MAX_COINS + " coins" });
