@@ -8,7 +8,7 @@ if (!getApps().length) {
 }
 
 const db = getFirestore();
-const PACKS = [10, 50, 100, 500];
+const PACKS = [10, 25, 50, 100, 250, 500, 1000, 2000, 3000];
 const NGN_RATE = 1600;
 const RETURN_URL = "https://stress-ochre.vercel.app/wallet?success=true";
 
