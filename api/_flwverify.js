@@ -52,13 +52,17 @@ module.exports = async function handleVerify(req, res) {
 
   if (
     !txRef.startsWith("stress_") ||
-    txRef.startsWith("stress_verified_") ||
     !/^\d+$/.test(transactionId)
   ) {
     return res.status(400).json({ error: "Invalid payment details." });
   }
 
   try {
+    if (txRef.startsWith("stress_verified_")) {
+      const b = await require("./_verifybadge")(db, uid, txRef, transactionId);
+      if (!b.ok) return res.status(200).json({ status: "not_confirmed" });
+      return res.status(200).json({ status: "paid", badge: true });
+    }
     const refDoc = db.collection("flwRefs").doc(txRef);
     const snap = await refDoc.get();
 
