@@ -19,7 +19,7 @@ module.exports = async function verifyBadge(db, uid, txRef, txId) {
       uid, verified: true, status: "active",
       email: String(tx.customer && tx.customer.email || "").toLowerCase(),
       expiresAt: Timestamp.fromDate(new Date(Date.now() + 32 * 24 * 60 * 60 * 1000)),
-      lastPaymentAt: FieldValue.serverTimestamp(), lastTransactionId: String(tx.id)
+      lastPaymentAt: FieldValue.serverTimestamp(), cancelled: false, lastTransactionId: String(tx.id)
     }, { merge: true });
     t.set(db.collection("verifiedUsers").doc(uid), { expiresAt: Timestamp.fromDate(new Date(Date.now() + 32 * 24 * 60 * 60 * 1000)) });
     t.update(payRef, { status: "paid", transactionId: String(tx.id) });

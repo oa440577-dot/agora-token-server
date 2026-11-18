@@ -20,6 +20,22 @@ module.exports = async (req, res) => {
 
     const decoded = await getAuth().verifyIdToken(token);
     const uid = decoded.uid;
+    if (req.body && req.body.action === "cancel") {
+      const u = await getAuth().getUser(uid);
+      if (!u.email) return res.status(400).json({ error: "No email on account" });
+      const auth = { Authorization: "Bearer " + process.env.FLW_SECRET_KEY };
+      const lr = await fetch("https://api.flutterwave.com/v3/subscriptions?email=" + encodeURIComponent(u.email), { headers: auth });
+      const lj = await lr.json();
+      const active = ((lj && lj.data) || []).filter((s) => s.status === "active");
+      let n = 0;
+      for (const s of active) {
+        const cr = await fetch("https://api.flutterwave.com/v3/subscriptions/" + s.id + "/cancel", { method: "PUT", headers: auth });
+        if (cr.ok) n++;
+      }
+      if (active.length && !n) return res.status(502).json({ error: "Could not cancel. Try again." });
+      if (n) await db.collection("verificationSubscriptions").doc(uid).set({ cancelled: true, cancelledAt: FieldValue.serverTimestamp() }, { merge: true });
+      return res.status(200).json({ ok: true, cancelled: n });
+    }
 
     if (uid === process.env.STRESS_FOUNDER_UID) {
       return res.status(400).json({ error: "Founder verification is free" });

@@ -76,7 +76,7 @@ module.exports = async (req, res) => {
         verified: true,
         status: "active",
         expiresAt: Timestamp.fromDate(new Date(Date.now() + 32 * 24 * 60 * 60 * 1000)),
-        lastPaymentAt: FieldValue.serverTimestamp(),
+        lastPaymentAt: FieldValue.serverTimestamp(), cancelled: false,
         lastTransactionId: String(tx.id)
       }, { merge: true });
 

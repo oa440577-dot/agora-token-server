@@ -32,7 +32,8 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       verified: Boolean(active),
       founder: false,
-      expiresAt: expiry ? expiry.toISOString() : null
+      expiresAt: expiry ? expiry.toISOString() : null,
+      cancelled: data.cancelled === true
     });
   } catch (err) {
     console.error("verification status:", err.message);
