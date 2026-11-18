@@ -11,10 +11,12 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const supplied = req.headers["verif-hash"];
-    const secret = process.env.FLW_WEBHOOK_SECRET_HASH;
-    if (!secret || !supplied ||
-        !crypto.timingSafeEqual(Buffer.from(String(supplied)), Buffer.from(String(secret)))) {
+    const supplied = Buffer.from(String(req.headers["verif-hash"] || ""));
+    const secret = Buffer.from(String(
+      process.env.FLW_WEBHOOK_SECRET_HASH || process.env.FLW_SECRET_HASH || ""
+    ));
+    if (!secret.length || supplied.length !== secret.length ||
+        !crypto.timingSafeEqual(supplied, secret)) {
       return res.status(401).send("Invalid signature");
     }
 

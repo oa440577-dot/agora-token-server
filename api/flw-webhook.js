@@ -23,6 +23,11 @@ module.exports = async (req, res) => {
     const event = req.body || {};
     const d = event.data || {};
     if (event.event !== "charge.completed" || !d.id || !d.tx_ref) return res.status(200).send("ignored");
+    if (String(d.tx_ref).startsWith("stress_verified_")) {
+      const handleVerification = require("./verification-webhook");
+      return handleVerification(req, res);
+    }
+
     const out = await creditPayment(db, d.tx_ref, d.id);
     return res.status(200).send(out.ok ? "ok" : out.reason);
   } catch (err) {
