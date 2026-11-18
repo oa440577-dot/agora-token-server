@@ -32,7 +32,7 @@ module.exports = async function handleVerify(req, res) {
     if (!snap.exists) return res.status(404).json({ error: "Unknown payment." });
     const saved = snap.data();
     if (saved.uid !== uid) return res.status(403).json({ error: "Not your payment." });
-    if (saved.status === "paid") return res.status(200).json({ status: "paid", coins: Number(saved.coins) });
+    if (saved.status === "paid" || saved.status === "done") return res.status(200).json({ status: "paid", coins: Number(saved.coins) });
     const r = await fetch("https://api.flutterwave.com/v3/transactions/" + id + "/verify", {
       headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY }
     });
@@ -46,7 +46,7 @@ module.exports = async function handleVerify(req, res) {
     const txDoc = db.collection("users").doc(uid).collection("transactions").doc(txRef);
     await db.runTransaction(async (t) => {
       const fresh = await t.get(refDoc);
-      if (fresh.data().status === "paid") return;
+      if (["paid", "done"].includes(fresh.data().status)) return;
       const w = await t.get(walletRef);
       const bal = w.exists ? w.data().coinBalance || 0 : 0;
       t.set(walletRef, { coinBalance: Math.round((bal + coins) * 100) / 100 }, { merge: true });

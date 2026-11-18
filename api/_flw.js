@@ -5,7 +5,7 @@ async function creditPayment(db, txRef, transactionId) {
   const snap = await refDoc.get();
   if (!snap.exists) return { ok: false, reason: "unknown reference" };
   const rec = snap.data();
-  if (rec.status === "done") return { ok: true, uid: rec.uid, coins: rec.coins };
+  if (rec.status === "done" || rec.status === "paid") return { ok: true, uid: rec.uid, coins: rec.coins };
   const vr = await fetch("https://api.flutterwave.com/v3/transactions/" + encodeURIComponent(transactionId) + "/verify", {
     headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY },
   });
@@ -18,14 +18,14 @@ async function creditPayment(db, txRef, transactionId) {
     return { ok: false, reason: "not valid" };
   }
   const walletRef = db.collection("wallets").doc(rec.uid);
-  const txDoc = db.collection("users").doc(rec.uid).collection("transactions").doc();
+  const txDoc = db.collection("users").doc(rec.uid).collection("transactions").doc(String(txRef));
   await db.runTransaction(async (tx) => {
     const again = await tx.get(refDoc);
-    if (again.data().status === "done") return;
+    if (["done", "paid"].includes(again.data().status)) return;
     const w = await tx.get(walletRef);
     const bal = w.exists ? Number(w.data().coinBalance) || 0 : 0;
     tx.set(walletRef, { coinBalance: Math.round((bal + rec.coins) * 100) / 100 }, { merge: true });
-    tx.update(refDoc, { status: "done", flwId: String(transactionId), paidAt: FieldValue.serverTimestamp() });
+    tx.update(refDoc, { status: "paid", flwId: String(transactionId), paidAt: FieldValue.serverTimestamp() });
     tx.set(txDoc, { type: "purchase", amount: rec.coins, amountUsd: rec.coins, provider: "flutterwave", reference: String(txRef), ...(cur !== "NGN" ? { currency: cur, amountPaid: need } : { amountNgn: need }), createdAt: FieldValue.serverTimestamp() });
   });
   return { ok: true, uid: rec.uid, coins: rec.coins };
