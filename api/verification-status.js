@@ -27,6 +27,7 @@ module.exports = async (req, res) => {
     const data = snap.exists ? snap.data() : {};
     const expiry = data.expiresAt?.toDate?.() || null;
     const active = data.verified === true && expiry && expiry.getTime() > Date.now();
+    if (active) await db.collection("verifiedUsers").doc(uid).set({ expiresAt: data.expiresAt }, { merge: true });
 
     return res.status(200).json({
       verified: Boolean(active),

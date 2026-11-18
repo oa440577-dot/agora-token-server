@@ -80,7 +80,8 @@ module.exports = async (req, res) => {
         lastTransactionId: String(tx.id)
       }, { merge: true });
 
-      if (payment.exists) t.update(paymentRef, { status: "paid", transactionId: String(tx.id) });
+      t.set(db.collection("verifiedUsers").doc(uid), { expiresAt: Timestamp.fromDate(new Date(Date.now() + 32 * 24 * 60 * 60 * 1000)) });
+    if (payment.exists) t.update(paymentRef, { status: "paid", transactionId: String(tx.id) });
     });
 
     return res.status(200).json({ received: true });

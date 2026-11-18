@@ -21,6 +21,7 @@ module.exports = async function verifyBadge(db, uid, txRef, txId) {
       expiresAt: Timestamp.fromDate(new Date(Date.now() + 32 * 24 * 60 * 60 * 1000)),
       lastPaymentAt: FieldValue.serverTimestamp(), lastTransactionId: String(tx.id)
     }, { merge: true });
+    t.set(db.collection("verifiedUsers").doc(uid), { expiresAt: Timestamp.fromDate(new Date(Date.now() + 32 * 24 * 60 * 60 * 1000)) });
     t.update(payRef, { status: "paid", transactionId: String(tx.id) });
   });
   return { ok: true };
