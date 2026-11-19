@@ -10,3 +10,4 @@ node_modules
 *.bak
 api/*.backup*
 api/*.before-*
+reset-test.js
